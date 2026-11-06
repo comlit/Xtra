@@ -352,6 +352,10 @@ class ExoPlayerFragment : PlayerFragment() {
 
     override fun getTotalDuration() = (playbackService?.player?.currentManifest as? HlsManifest)?.mediaPlaylist?.durationUs?.div(1000)
 
+    override fun isPlaying(): Boolean? {
+        return playbackService?.player?.let { !Util.shouldShowPlayButton(it) }
+    }
+
     override fun playPause() {
         playbackService?.togglePause()
     }

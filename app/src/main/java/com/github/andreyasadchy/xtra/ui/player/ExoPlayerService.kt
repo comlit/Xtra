@@ -138,6 +138,7 @@ class ExoPlayerService : BasePlaybackService() {
     private var videoSwapActive = false
     private var stopVideoSwap = false
     private var hidden = false
+    private var blockAds = true
 
     private var backupQualities: List<String>? = null
     private var updateQualities = false
@@ -252,7 +253,7 @@ class ExoPlayerService : BasePlaybackService() {
                     if (type == STREAM) {
                         val useProxy = useStreamProxy && !stopProxy && streamProxyList?.getOrNull(currentStreamProxy)?.proxyMediaPlaylist == true
                         val useVideoSwap = useVideoSwap && !stopVideoSwap
-                        val hideAds = prefs().getBoolean(C.PLAYER_HIDE_ADS, false)
+                        val hideAds = blockAds || prefs().getBoolean(C.PLAYER_HIDE_ADS, false)
                         if (useProxy || useVideoSwap || hideAds) {
                             val playlist = (player?.currentManifest as? HlsManifest)?.mediaPlaylist
                             val ads = checkPlaylist(playlist)
@@ -280,6 +281,7 @@ class ExoPlayerService : BasePlaybackService() {
                                                     serviceListener?.toast(R.string.stopping_proxy, Toast.LENGTH_SHORT)
                                                     stopSecondaryPlayer2()
                                                     secondaryPlayerTimerJob = null
+                                                    hideIfAdsStillPlaying()
                                                 }
                                                 startSecondaryPlayer(true)
                                             }
@@ -303,27 +305,20 @@ class ExoPlayerService : BasePlaybackService() {
                                                     serviceListener?.toast(R.string.stopping_video_swap, Toast.LENGTH_SHORT)
                                                     stopSecondaryPlayer2()
                                                     secondaryPlayerTimerJob = null
+                                                    hideIfAdsStillPlaying()
                                                 }
                                                 startSecondaryPlayer(false)
                                             }
                                         }
-                                        else -> {
-                                            if (!hidden) {
-                                                hidden = true
-                                                serviceListener?.toast(R.string.waiting_ads, Toast.LENGTH_LONG)
-                                                player?.let { player ->
-                                                    if (quality?.name != VideoQuality.AUDIO_ONLY_QUALITY) {
-                                                        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
-                                                            setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, true)
-                                                        }.build()
-                                                    }
-                                                    player.volume = 0f
-                                                }
-                                            }
-                                        }
+                                        else -> hideForAds()
                                     }
                                 }
                             } else {
+                                if (oldValue && blockAds && stopVideoSwap) {
+                                    // all backup streams had ads during this break, try them again next time
+                                    stopVideoSwap = false
+                                    currentVideoSwapItem = 0
+                                }
                                 when {
                                     proxyMediaPlaylist -> {
                                         if (adDelayJob == null) {
@@ -770,11 +765,19 @@ class ExoPlayerService : BasePlaybackService() {
                                     && (it.proxyPlaybackAccessToken || it.proxyMultivariantPlaylist || it.proxyMediaPlaylist)
                         }.sortedBy { it.position }
                     }
-                    useVideoSwap = !useCustomProxy && !useStreamProxy && prefs().getBoolean(C.PLAYER_USE_VIDEO_SWAP, false)
+                    blockAds = prefs().getBoolean(C.PLAYER_BLOCK_ADS, true)
+                    // "Use custom proxies" is on by default but the list is usually empty. An empty list doesn't
+                    // route anything through a proxy, so it must not disable the backup stream ad blocker.
+                    val customProxyActive = useCustomProxy && !customProxyList.isNullOrEmpty()
+                    useVideoSwap = !useStreamProxy && (blockAds || (!customProxyActive && prefs().getBoolean(C.PLAYER_USE_VIDEO_SWAP, false)))
                     if (useVideoSwap) {
                         videoSwapList = xtraModule.playerRepository.getVideoSwapItems().filter {
                             it.enabled && !it.platform.isNullOrBlank() && !it.playerType.isNullOrBlank()
                         }.sortedBy { it.position }
+                        if (videoSwapList.isNullOrEmpty()) {
+                            // nothing to swap to, fall back to hiding the player during ads
+                            useVideoSwap = false
+                        }
                     }
                     loadStream(restorePauseState)
                 }
@@ -1624,6 +1627,35 @@ class ExoPlayerService : BasePlaybackService() {
         }
     }
 
+    /**
+     * Mutes the main player and disables its video track until the ad break is over.
+     * Used when no ad-free backup stream is available.
+     */
+    private fun hideForAds() {
+        if (!hidden) {
+            hidden = true
+            serviceListener?.toast(R.string.waiting_ads, Toast.LENGTH_LONG)
+            player?.let { player ->
+                if (quality?.name != VideoQuality.AUDIO_ONLY_QUALITY) {
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
+                        setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, true)
+                    }.build()
+                }
+                player.volume = 0f
+            }
+        }
+    }
+
+    /**
+     * Called after a backup stream was stopped. If the main stream is still showing ads, keep them hidden
+     * instead of switching back to the ad.
+     */
+    private fun hideIfAdsStillPlaying() {
+        if (type == STREAM && playingAds && (blockAds || prefs().getBoolean(C.PLAYER_HIDE_ADS, false))) {
+            hideForAds()
+        }
+    }
+
     private fun checkPlaylist(playlist: HlsMediaPlaylist?): Boolean {
         return playlist?.segments?.lastOrNull()?.let { segment ->
             val title = segment.title.substringBefore('|')
@@ -1674,12 +1706,14 @@ class ExoPlayerService : BasePlaybackService() {
                                         serviceListener?.toast(R.string.stopping_proxy, Toast.LENGTH_SHORT)
                                         stopSecondaryPlayer2()
                                         secondaryPlayerTimerJob = null
+                                        hideIfAdsStillPlaying()
                                     }
                                     startSecondaryPlayer(true)
                                 } else {
                                     stopProxy = true
                                     serviceListener?.toast(R.string.stopping_proxy, Toast.LENGTH_SHORT)
                                     stopSecondaryPlayer()
+                                    hideIfAdsStillPlaying()
                                 }
                             }
                             videoSwapActive -> {
@@ -1692,12 +1726,14 @@ class ExoPlayerService : BasePlaybackService() {
                                         serviceListener?.toast(R.string.stopping_video_swap, Toast.LENGTH_SHORT)
                                         stopSecondaryPlayer2()
                                         secondaryPlayerTimerJob = null
+                                        hideIfAdsStillPlaying()
                                     }
                                     startSecondaryPlayer(false)
                                 } else {
                                     stopVideoSwap = true
                                     serviceListener?.toast(R.string.stopping_video_swap, Toast.LENGTH_SHORT)
                                     stopSecondaryPlayer()
+                                    hideIfAdsStillPlaying()
                                 }
                             }
                         }
@@ -2060,7 +2096,9 @@ class ExoPlayerService : BasePlaybackService() {
                 secondaryPlayer = player
                 serviceListener?.setPlayerSurface(true)
             } else {
+                player.release()
                 stopSecondaryPlayer()
+                hideIfAdsStillPlaying()
             }
         }
     }

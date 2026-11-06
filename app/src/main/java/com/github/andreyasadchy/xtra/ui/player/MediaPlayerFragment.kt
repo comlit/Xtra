@@ -300,6 +300,10 @@ class MediaPlayerFragment : PlayerFragment() {
 
     override fun getTotalDuration() = playbackService?.player?.duration?.toLong()
 
+    override fun isPlaying(): Boolean? {
+        return playbackService?.player?.isPlaying
+    }
+
     override fun playPause() {
         playbackService?.player?.let { player ->
             if (player.isPlaying) {

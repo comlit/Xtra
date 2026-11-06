@@ -21,6 +21,13 @@ fun Context.prefs(): SharedPreferences = PreferenceManager.getDefaultSharedPrefe
 
 fun Context.tokenPrefs(): SharedPreferences = getSharedPreferences("prefs2", Context.MODE_PRIVATE)
 
+/**
+ * True on Android TV / Google TV devices (TCL, Sony, Chromecast with Google TV, ...).
+ * Uses the same check as the "television" resource qualifier so code and layouts always agree.
+ */
+val Context.isTv: Boolean
+    get() = (resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION
+
 fun Activity.applyTheme() {
     // On Android 15, wrong language is used when multiple languages are set in device settings
     if (Build.VERSION.SDK_INT == Build.VERSION_CODES.VANILLA_ICE_CREAM) {

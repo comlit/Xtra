@@ -577,4 +577,7 @@
     <string name="stopping_video_swap">Video-Swap wird gestoppt</string>
     <string name="starting_proxy">Proxy wird gestartet</string>
     <string name="stopping_proxy">Proxy wird gestoppt</string>
+    <string name="block_ads">Werbung blockieren</string>
+    <string name="block_ads_desc">Wechselt während Werbepausen zu einem werbefreien Ersatz-Stream (einstellbar unter Video-Swap). Haben alle Ersatz-Streams ebenfalls Werbung, wird der Player bis zum Ende der Pause ausgeblendet und stummgeschaltet.</string>
+    <string name="tv_login_code">Öffne auf deinem Handy oder Computer twitch.tv/activate, melde dich an und gib diesen Code ein:\n\n%1$s\n\nDrücke danach auf \"Weiter\".</string>
 </resources>

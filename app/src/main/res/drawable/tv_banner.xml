@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV / Google TV launcher banner (320x180) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path
+        android:fillColor="@color/ic_launcher_background"
+        android:pathData="M0,0h320v180h-320z" />
+    <group
+        android:scaleX="0.22"
+        android:scaleY="0.22"
+        android:translateX="26"
+        android:translateY="34">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="m162 18l118 103l193 0l19 37l-162 7l173 154l-61 112l-213 -262l-216 9l25 -56l151 0l-66 -83l39 -21z" />
+        <path
+            android:pathData="m10,255a245,245 0,1 1,490 0a245,245 0,1 1,-490 0"
+            android:strokeWidth="25"
+            android:strokeColor="#FFFFFF" />
+    </group>
+    <!-- "XTRA" -->
+    <path
+        android:pathData="M160,62L190,118M190,62L160,118 M198,62L228,62M213,62L213,118 M238,118L238,62L252,62A15,15 0,0 1,252 92L238,92M250,92L266,118 M272,118L287,62L302,118M277.5,98L296.5,98"
+        android:strokeWidth="9"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

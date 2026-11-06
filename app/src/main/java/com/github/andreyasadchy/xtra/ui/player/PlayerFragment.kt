@@ -21,6 +21,7 @@ import android.text.format.DateUtils
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.RoundedCorner
@@ -75,6 +76,7 @@ import com.github.andreyasadchy.xtra.util.C
 import com.github.andreyasadchy.xtra.util.TwitchApiHelper
 import com.github.andreyasadchy.xtra.util.getAlertDialogBuilder
 import com.github.andreyasadchy.xtra.util.isKeyboardShown
+import com.github.andreyasadchy.xtra.util.isTv
 import com.github.andreyasadchy.xtra.util.prefs
 import com.github.andreyasadchy.xtra.util.tokenPrefs
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -125,10 +127,16 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
     private var controllerAnimation: ViewPropertyAnimator? = null
     private var backgroundColor: Int? = null
     private var backgroundVisible = false
+    private var isTv = false
+    private var closedOnTv = false
 
     private val backPressedCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
-            minimize()
+            if (isTv) {
+                handleTvBack()
+            } else {
+                minimize()
+            }
         }
     }
 
@@ -136,6 +144,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
     open fun getCurrentSpeed(): Float? = null
     open fun getCurrentVolume(): Float? = null
     open fun getTotalDuration(): Long? = null
+    open fun isPlaying(): Boolean? = null
     open fun playPause() {}
     open fun rewind() {}
     open fun fastForward() {}
@@ -160,6 +169,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
             enableNetworkCheck = false
         }
         super.onCreate(savedInstanceState)
+        isTv = requireContext().isTv
         isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
         requireActivity().onBackPressedDispatcher.addCallback(this, backPressedCallback)
         WindowCompat.getInsetsController(
@@ -626,6 +636,9 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                 subtitleView.setUserDefaultStyle()
                 subtitleView.setUserDefaultTextSize()
             }
+            if (isTv) {
+                setupTv()
+            }
         }
     }
 
@@ -734,7 +747,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                         minimize()
                     }
                 }
-                if (requireContext().prefs().getBoolean(C.PLAYER_MINIMIZE, true)) {
+                if (requireContext().prefs().getBoolean(C.PLAYER_MINIMIZE, true) && !isTv) {
                     minimize.visibility = View.VISIBLE
                     minimize.setOnClickListener { minimize() }
                 }
@@ -1242,7 +1255,8 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                 playerLayout.isPortrait = false
                 chatLayout.isPortrait = false
                 with(playerControls) {
-                    if (requireContext().prefs().getBoolean(C.PLAYER_FULLSCREEN, true)) {
+                    // a TV is always landscape, rotating the activity there makes no sense
+                    if (requireContext().prefs().getBoolean(C.PLAYER_FULLSCREEN, true) && !isTv) {
                         fullscreen.visibility = View.VISIBLE
                         fullscreen.setImageResource(R.drawable.baseline_fullscreen_exit_black_24)
                         fullscreen.setOnClickListener {
@@ -2019,6 +2033,12 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
     }
 
     fun minimize() {
+        if (isTv) {
+            // Without a touch screen the mini player can't be dragged, tapped or swiped away,
+            // so on a TV leaving the full screen player closes it.
+            closeOnTv()
+            return
+        }
         with(binding) {
             isMaximized = false
             if (playbackService?.type == BasePlaybackService.STREAM && chatFragment?.emoteMenuIsVisible() == true) {
@@ -2132,6 +2152,145 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                 start()
             }
         }
+    }
+
+    private fun setupTv() {
+        with(binding) {
+            // Remote friendly focus indicators, the default ones are invisible on top of the video
+            with(playerControls) {
+                listOf(playPause, rewind, fastForward, minimize, download, follow, sleepTimer, aspectRatio, speed, quality, menu,
+                    restart, seekLive, vodGames, volume, audioCompressor, audioOnly, subtitles, toggleChatInput, toggleChat, fullscreen
+                ).forEach {
+                    it.setBackgroundResource(R.drawable.tv_focus_oval)
+                    ViewCompat.setBackgroundTintList(it, null)
+                }
+                listOf(channel, category, viewersLayout, progressBar).forEach {
+                    it.setBackgroundResource(R.drawable.tv_focus_rect)
+                }
+            }
+            root.isFocusable = true
+            (activity as? MainActivity)?.setTvPlayerFocus(true)
+            root.requestFocus()
+        }
+    }
+
+    private fun closeOnTv() {
+        if (!closedOnTv) {
+            closedOnTv = true
+            isMaximized = false
+            backPressedCallback.remove()
+            close()
+            (activity as? MainActivity)?.closePlayer()
+        }
+    }
+
+    /**
+     * BACK on a TV remote: leave the chat, then hide the controls, then close the player.
+     */
+    private fun handleTvBack() {
+        val binding = _binding ?: return
+        val controls = binding.playerControls.root
+        when {
+            binding.chatLayout.hasFocus() -> showTvControls()
+            controls.isVisible && controllerHideOnTouch -> hideController(force = true)
+            else -> closeOnTv()
+        }
+    }
+
+    private fun showTvControls() {
+        val controls = binding.playerControls.root
+        val wasVisible = controls.isVisible
+        showController(force = true)
+        if (!controls.isVisible) {
+            controls.visibility = View.VISIBLE
+        }
+        if (!wasVisible) {
+            updateProgress()
+        }
+        if (!controls.hasFocus()) {
+            val playPause = binding.playerControls.playPause
+            if (!(playPause.isVisible && playPause.requestFocus())) {
+                controls.requestFocus()
+            }
+        }
+    }
+
+    /**
+     * Remote control handling for Android TV, called by the activity before the focused view gets the key.
+     * Returns true if the event was consumed.
+     */
+    fun dispatchTvKeyEvent(event: KeyEvent): Boolean {
+        val binding = _binding ?: return false
+        if (!isTv || !isMaximized || !useController || closedOnTv) {
+            return false
+        }
+        val keyCode = event.keyCode
+        val isDown = event.action == KeyEvent.ACTION_DOWN
+        val canSeek = playbackService?.type != BasePlaybackService.STREAM
+        when (keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                if (isDown && event.repeatCount == 0) {
+                    val playing = isPlaying()
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_MEDIA_PLAY -> if (playing != true) playPause()
+                        KeyEvent.KEYCODE_MEDIA_PAUSE -> if (playing != false) playPause()
+                        else -> playPause()
+                    }
+                    showTvControls()
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD, KeyEvent.KEYCODE_MEDIA_STEP_FORWARD -> {
+                if (isDown && canSeek) {
+                    fastForward()
+                    showTvControls()
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD, KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> {
+                if (isDown && canSeek) {
+                    rewind()
+                    showTvControls()
+                }
+                return true
+            }
+        }
+        if (binding.chatLayout.hasFocus()) {
+            // let the remote scroll through chat messages, BACK returns to the player
+            return false
+        }
+        val isNavigationKey = when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_INFO -> true
+            else -> false
+        }
+        if (!isNavigationKey) {
+            return false
+        }
+        val controls = binding.playerControls.root
+        if (controls.isVisible && controls.alpha > 0f && !controllerIsAnimating) {
+            // controls are shown: normal focus navigation, just keep them from hiding while in use
+            if (isDown) {
+                showController(force = true)
+                if (!controls.hasFocus()) {
+                    showTvControls()
+                    return true
+                }
+            }
+            return false
+        }
+        // controls are hidden
+        if (isDown) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> if (canSeek) rewind()
+                KeyEvent.KEYCODE_DPAD_RIGHT -> if (canSeek) fastForward()
+            }
+            if (event.repeatCount == 0 || canSeek) {
+                showTvControls()
+            }
+        }
+        return true
     }
 
     fun findUnlistedVideo() {

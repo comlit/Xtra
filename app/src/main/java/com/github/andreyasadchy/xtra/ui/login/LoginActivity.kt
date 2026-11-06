@@ -37,6 +37,7 @@ import com.github.andreyasadchy.xtra.util.C
 import com.github.andreyasadchy.xtra.util.TwitchApiHelper
 import com.github.andreyasadchy.xtra.util.applyTheme
 import com.github.andreyasadchy.xtra.util.getAlertDialogBuilder
+import com.github.andreyasadchy.xtra.util.isTv
 import com.github.andreyasadchy.xtra.util.prefs
 import com.github.andreyasadchy.xtra.util.tokenPrefs
 import com.google.android.material.slider.Slider
@@ -313,7 +314,12 @@ class LoginActivity : AppCompatActivity() {
                     }
                 }
             }
-            if (apiSetting == 1) {
+            if (isTv) {
+                // Typing an email and password into a web page with a TV remote is painful,
+                // so on a TV log in by entering a code on twitch.tv/activate from a phone or computer.
+                textZoom.visibility = View.GONE
+                setupExternalCodeLogin(networkLibrary, helixClientId, helixAuthUrl)
+            } else if (apiSetting == 1) {
                 readHeaders = true
                 webView.loadUrl("https://www.twitch.tv/login")
             } else {
@@ -560,7 +566,7 @@ class LoginActivity : AppCompatActivity() {
                     val response = xtraModule.authRepository.getDeviceCode(networkLibrary, "client_id=${gqlClientId}&scopes=channel_read+chat%3Aread+user_blocks_edit+user_blocks_read+user_follows_edit+user_read")
                     deviceCode = response.deviceCode
                     userCode = response.userCode
-                    codeText.text = userCode
+                    codeText.text = if (isTv) getString(R.string.tv_login_code, userCode) else userCode
                 } catch (e: Exception) {
 
                 }
@@ -586,6 +592,9 @@ class LoginActivity : AppCompatActivity() {
                 }
             }
             next.visibility = View.VISIBLE
+            if (isTv) {
+                next.requestFocus()
+            }
             next.setOnClickListener {
                 if (deviceCode != null) {
                     lifecycleScope.launch {

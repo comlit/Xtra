@@ -23,10 +23,12 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.os.ext.SdkExtensions
 import android.text.format.Formatter
+import android.view.KeyEvent
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -57,6 +59,9 @@ import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.NavigationUI
 import androidx.navigation.ui.setupWithNavController
+import androidx.paging.PagingDataAdapter
+import androidx.recyclerview.widget.ConcatAdapter
+import androidx.recyclerview.widget.RecyclerView
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -89,15 +94,18 @@ import com.github.andreyasadchy.xtra.ui.saved.downloads.DownloadsFragment
 import com.github.andreyasadchy.xtra.ui.team.TeamFragmentDirections
 import com.github.andreyasadchy.xtra.ui.top.TopStreamsFragmentDirections
 import com.github.andreyasadchy.xtra.util.C
+import com.github.andreyasadchy.xtra.util.TvFocusHighlight
 import com.github.andreyasadchy.xtra.util.TwitchApiHelper
 import com.github.andreyasadchy.xtra.util.applyTheme
 import com.github.andreyasadchy.xtra.util.getAlertDialogBuilder
+import com.github.andreyasadchy.xtra.util.isTv
 import com.github.andreyasadchy.xtra.util.prefs
 import com.github.andreyasadchy.xtra.util.tokenPrefs
 import com.google.android.material.color.MaterialColors
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.chromium.net.CronetProvider
+import java.lang.ref.WeakReference
 import java.util.Timer
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.schedule
@@ -129,6 +137,12 @@ class MainActivity : AppCompatActivity() {
     var logoutResultLauncher: ActivityResultLauncher<Intent>? = null
     private var updateDownloadDialogBinding: DialogUpdateDownloadBinding? = null
     private var updateDownloadDialog: AlertDialog? = null
+    private var focusBeforePlayer: WeakReference<View>? = null
+    private val tvBackToNavBarCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            focusNavBar()
+        }
+    }
 
     //Lifecycle methods
 
@@ -187,6 +201,9 @@ class MainActivity : AppCompatActivity() {
 
         var initialized = savedInstanceState != null
         initNavigation()
+        if (isTv) {
+            setupTv()
+        }
         val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         if (!initialized) {
             val networkCapabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
@@ -1007,11 +1024,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun closePlayer() {
-        supportFragmentManager.beginTransaction()
-            .setTransition(FragmentTransaction.TRANSIT_FRAGMENT_FADE)
-            .remove(supportFragmentManager.findFragmentById(R.id.playerContainer)!!)
-            .commit()
+        supportFragmentManager.findFragmentById(R.id.playerContainer)?.let {
+            supportFragmentManager.beginTransaction()
+                .setTransition(FragmentTransaction.TRANSIT_FRAGMENT_FADE)
+                .remove(it)
+                .commit()
+        }
         playerFragment = null
+        setTvPlayerFocus(false)
         viewModel.isPlayerOpened = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
             setPictureInPictureParams(PictureInPictureParams.Builder().setAutoEnterEnabled(false).build())
@@ -1091,6 +1111,96 @@ class MainActivity : AppCompatActivity() {
 
     fun popFragment() {
         navController.navigateUp()
+    }
+
+//TV methods
+
+    private fun setupTv() {
+        TvFocusHighlight.install(this)
+        onBackPressedDispatcher.addCallback(this, tvBackToNavBarCallback)
+        navController.addOnDestinationChangedListener { _, _, _ -> updateTvBackCallback() }
+        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, _ -> updateTvBackCallback() }
+        updateTvBackCallback()
+    }
+
+    /**
+     * On a top level screen BACK first moves the focus to the navigation rail (the usual way to switch
+     * tabs with a remote). Pressing BACK again while the rail is focused closes the app as before.
+     */
+    private fun updateTvBackCallback() {
+        tvBackToNavBarCallback.isEnabled = binding.navBarContainer.isVisible &&
+                !binding.navBarContainer.hasFocus() &&
+                navController.previousBackStackEntry == null
+    }
+
+    private fun focusNavBar() {
+        val navBar = binding.navBar
+        (navBar.findViewById<View>(navBar.selectedItemId) ?: navBar).requestFocus()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (isTv && (playerFragment as? PlayerFragment)?.dispatchTvKeyEvent(event) == true) {
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * While the full screen player is open on a TV the screens below it must not take focus,
+     * otherwise the remote would move an invisible focus to the cards behind the video.
+     * When the player closes, focus goes back to the item that started it.
+     */
+    fun setTvPlayerFocus(playerOpen: Boolean) {
+        if (!isTv) return
+        if (playerOpen) {
+            if (focusBeforePlayer == null) {
+                currentFocus?.takeIf { !isInsidePlayer(it) }?.let { focusBeforePlayer = WeakReference(it) }
+            }
+            binding.navHostFragment.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            binding.navBarContainer.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        } else {
+            binding.navHostFragment.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+            binding.navBarContainer.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+            val previous = focusBeforePlayer?.get()
+            focusBeforePlayer = null
+            if (previous == null || !previous.isAttachedToWindow || !previous.isShown || !previous.requestFocus()) {
+                if (!binding.navHostFragment.requestFocus()) {
+                    focusNavBar()
+                }
+            }
+        }
+    }
+
+    private fun refreshPagedLists(view: View) {
+        if (view is RecyclerView) {
+            when (val adapter = view.adapter) {
+                is PagingDataAdapter<*, *> -> {
+                    adapter.refresh()
+                    return
+                }
+                is ConcatAdapter -> {
+                    val pagingAdapters = adapter.adapters.filterIsInstance<PagingDataAdapter<*, *>>()
+                    if (pagingAdapters.isNotEmpty()) {
+                        pagingAdapters.forEach { it.refresh() }
+                        return
+                    }
+                }
+            }
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                refreshPagedLists(view.getChildAt(i))
+            }
+        }
+    }
+
+    private fun isInsidePlayer(view: View): Boolean {
+        var current: View? = view
+        while (current != null) {
+            if (current === binding.playerContainer) return true
+            current = current.parent as? View
+        }
+        return false
     }
 
     private fun initNavigation() {
@@ -1175,6 +1285,10 @@ class MainActivity : AppCompatActivity() {
                     val currentFragment = supportFragmentManager.findFragmentById(R.id.navHostFragment)?.childFragmentManager?.fragments?.getOrNull(0)
                     if (currentFragment is Scrollable) {
                         currentFragment.scrollToTop()
+                    }
+                    if (isTv) {
+                        // pull to refresh doesn't work with a remote, selecting the current tab again reloads it instead
+                        currentFragment?.view?.let { refreshPagedLists(it) }
                     }
                 }
             }
@@ -1390,6 +1504,15 @@ class MainActivity : AppCompatActivity() {
             viewModel.setDefaultVideoSwapItems()
             prefs.edit {
                 putInt(C.SETTINGS_VERSION, 17)
+            }
+        }
+        if (version < 18) {
+            prefs.edit {
+                // TV screens are wide enough for more columns than a phone in landscape
+                if (isTv && prefs.getString(C.LANDSCAPE_COLUMN_COUNT, "2") == "2") {
+                    putString(C.LANDSCAPE_COLUMN_COUNT, "3")
+                }
+                putInt(C.SETTINGS_VERSION, 18)
             }
         }
     }

@@ -1,6 +1,14 @@
 <androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <SwitchPreferenceCompat
+        android:defaultValue="true"
+        android:key="player_block_ads"
+        android:summary="@string/block_ads_desc"
+        android:title="@string/block_ads"
+        app:iconSpaceReserved="false"
+        app:singleLineTitle="false" />
+
     <EditTextPreference
         android:defaultValue="3000"
         android:key="proxy_timeout"

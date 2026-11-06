@@ -20,7 +20,7 @@
     <application
         android:name=".XtraApp"
         android:allowBackup="true"
-        android:banner="@mipmap/ic_launcher"
+        android:banner="@drawable/tv_banner"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/backup_rules"
@@ -33,9 +33,10 @@
         tools:ignore="UnusedAttribute">
         <activity
             android:name=".ui.main.MainActivity"
+            android:banner="@drawable/tv_banner"
             android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
-            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden|navigation"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
