@@ -11,6 +11,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.github.andreyasadchy.xtra.databinding.CommonRecyclerViewLayoutBinding
 import com.github.andreyasadchy.xtra.ui.main.MainActivity
 import com.github.andreyasadchy.xtra.util.C
+import com.github.andreyasadchy.xtra.util.isTv
 import com.github.andreyasadchy.xtra.util.prefs
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -72,7 +73,7 @@ abstract class PagedListFragment : BaseNetworkFragment(), IntegrityDialog.Listen
                 swipeRefresh.isEnabled = true
                 swipeRefresh.setOnRefreshListener { pagingAdapter.refresh() }
             }
-            if (enableScrollTopButton && requireContext().prefs().getBoolean(C.UI_SCROLL_TOP, true)) {
+            if (enableScrollTopButton && requireContext().prefs().getBoolean(C.UI_SCROLL_TOP, true) && !requireContext().isTv) {
                 recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
                     override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                         super.onScrollStateChanged(recyclerView, newState)

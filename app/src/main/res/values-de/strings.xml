@@ -579,5 +579,15 @@
     <string name="stopping_proxy">Proxy wird gestoppt</string>
     <string name="block_ads">Werbung blockieren</string>
     <string name="block_ads_desc">Wechselt während Werbepausen zu einem werbefreien Ersatz-Stream (einstellbar unter Video-Swap). Haben alle Ersatz-Streams ebenfalls Werbung, wird der Player bis zum Ende der Pause ausgeblendet und stummgeschaltet.</string>
-    <string name="tv_login_code">Öffne auf deinem Handy oder Computer twitch.tv/activate, melde dich an und gib diesen Code ein:\n\n%1$s\n\nDrücke danach auf \"Weiter\".</string>
+    <string name="tv_action_channel">Kanal: %1$s</string>
+    <string name="tv_action_channel_no_name">Kanal öffnen</string>
+    <string name="tv_action_game">Kategorie: %1$s</string>
+    <string name="tv_action_tag">Tag: %1$s</string>
+    <string name="tv_action_options">Weitere Optionen…</string>
+    <string name="tv_action_more">Mehr…</string>
+    <string name="chat_mode_side">Chat neben dem Video</string>
+    <string name="chat_mode_overlay">Chat über dem Video</string>
+    <string name="chat_mode_off">Chat aus</string>
+    <string name="tv_login_code">Scanne den QR-Code mit deinem Handy oder öffne twitch.tv/activate auf deinem Handy oder Computer und gib diesen Code ein:\n\n%1$s\n\nNachdem du dich dort angemeldet hast, drücke auf \"Weiter\".</string>
+    <string name="tv_login_qr">QR-Code zum Anmelden mit dem Handy</string>
 </resources>

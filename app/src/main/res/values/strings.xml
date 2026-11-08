@@ -598,5 +598,15 @@
     <string name="stopping_proxy">Stopping proxy</string>
     <string name="block_ads">Block ads</string>
     <string name="block_ads_desc">During stream ad breaks, switch to an ad-free backup stream (configured in video swap settings). If every backup has ads too, the player is hidden and muted until the break is over.</string>
-    <string name="tv_login_code">On your phone or computer, open twitch.tv/activate, log in and enter this code:\n\n%1$s\n\nThen press \"Next\".</string>
+    <string name="tv_action_channel">Channel: %1$s</string>
+    <string name="tv_action_channel_no_name">Open channel</string>
+    <string name="tv_action_game">Category: %1$s</string>
+    <string name="tv_action_tag">Tag: %1$s</string>
+    <string name="tv_action_options">More options…</string>
+    <string name="tv_action_more">More…</string>
+    <string name="chat_mode_side">Chat next to the video</string>
+    <string name="chat_mode_overlay">Chat on top of the video</string>
+    <string name="chat_mode_off">Chat off</string>
+    <string name="tv_login_code">Scan the QR code with your phone, or open twitch.tv/activate on your phone or computer and enter this code:\n\n%1$s\n\nAfter logging in there, press \"Next\".</string>
+    <string name="tv_login_qr">QR code to log in on your phone</string>
 </resources>

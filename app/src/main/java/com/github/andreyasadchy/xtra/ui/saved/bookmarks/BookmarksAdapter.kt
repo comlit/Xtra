@@ -140,6 +140,7 @@ class BookmarksAdapter(
                             false
                         )
                     }
+                    root.setTag(R.id.tv_long_press_label, R.string.delete)
                     root.setOnLongClickListener {
                         deleteVideo(item)
                         true

@@ -50,6 +50,7 @@ import com.github.andreyasadchy.xtra.util.MediaButtonReceiver
 import com.github.andreyasadchy.xtra.util.NetworkUtils
 import com.github.andreyasadchy.xtra.util.NetworkUtils.executeAsync
 import com.github.andreyasadchy.xtra.util.TwitchApiHelper
+import com.github.andreyasadchy.xtra.util.isTv
 import com.github.andreyasadchy.xtra.util.prefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1450,6 +1451,11 @@ class MediaPlayerService : BasePlaybackService() {
     }
 
     fun stop(isInPIPMode: Boolean) {
+        if (isTv && !isInPIPMode) {
+            // HOME on a TV means "stop watching": no audio-only playback behind the launcher
+            player?.pause()
+            return
+        }
         player?.let { player ->
             val isInteractive = (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
             if ((!isInPIPMode && isInteractive && prefs().getBoolean(C.PLAYER_BACKGROUND_AUDIO, true))

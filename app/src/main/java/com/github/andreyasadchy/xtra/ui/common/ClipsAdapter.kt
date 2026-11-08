@@ -67,6 +67,7 @@ class ClipsAdapter(
                     root.setOnClickListener {
                         (fragment.activity as MainActivity).startClip(item)
                     }
+                    root.setTag(R.id.tv_long_press_label, R.string.download)
                     root.setOnLongClickListener {
                         showDownloadDialog(item)
                         true

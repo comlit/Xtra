@@ -61,6 +61,7 @@ import androidx.navigation.ui.NavigationUI
 import androidx.navigation.ui.setupWithNavController
 import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.ConcatAdapter
+import com.github.andreyasadchy.xtra.ui.view.TvGridView
 import androidx.recyclerview.widget.RecyclerView
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -95,6 +96,7 @@ import com.github.andreyasadchy.xtra.ui.team.TeamFragmentDirections
 import com.github.andreyasadchy.xtra.ui.top.TopStreamsFragmentDirections
 import com.github.andreyasadchy.xtra.util.C
 import com.github.andreyasadchy.xtra.util.TvFocusHighlight
+import com.github.andreyasadchy.xtra.util.TvScreen
 import com.github.andreyasadchy.xtra.util.TwitchApiHelper
 import com.github.andreyasadchy.xtra.util.applyTheme
 import com.github.andreyasadchy.xtra.util.getAlertDialogBuilder
@@ -138,6 +140,8 @@ class MainActivity : AppCompatActivity() {
     private var updateDownloadDialogBinding: DialogUpdateDownloadBinding? = null
     private var updateDownloadDialog: AlertDialog? = null
     private var focusBeforePlayer: WeakReference<View>? = null
+    private var tvLastKeyCode = 0
+    private var tvLastContentFocus: WeakReference<View>? = null
     private val tvBackToNavBarCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
             focusNavBar()
@@ -1119,8 +1123,65 @@ class MainActivity : AppCompatActivity() {
         TvFocusHighlight.install(this)
         onBackPressedDispatcher.addCallback(this, tvBackToNavBarCallback)
         navController.addOnDestinationChangedListener { _, _, _ -> updateTvBackCallback() }
-        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, _ -> updateTvBackCallback() }
+        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { oldFocus, newFocus ->
+            updateTvBackCallback()
+            TvScreen.onFocusChanged(oldFocus, newFocus)
+            onTvFocusChanged(oldFocus, newFocus)
+        }
+        // every screen is built for phones: fixed headers and locked tab pages on a TV (see TvScreen),
+        // the lists themselves are TvGridViews (layout-television/common_recycler_view_layout.xml)
+        supportFragmentManager.registerFragmentLifecycleCallbacks(object : FragmentManager.FragmentLifecycleCallbacks() {
+            override fun onFragmentViewCreated(fm: FragmentManager, f: Fragment, v: View, savedInstanceState: Bundle?) {
+                if (generateSequence(f) { it.parentFragment }.none { it is PlayerFragment }) {
+                    TvScreen.adapt(v)
+                }
+            }
+        }, true)
         updateTvBackCallback()
+    }
+
+    /**
+     * Safety net: when the focused view goes away (a list reloads, an item is removed), Android gives the focus to
+     * the first focusable view of the window, a navigation rail item. Put it back into the content.
+     */
+    private fun onTvFocusChanged(oldFocus: View?, newFocus: View?) {
+        if (newFocus == null) return
+        if (isInside(newFocus, binding.navHostFragment)) {
+            tvLastContentFocus = WeakReference(newFocus)
+        } else if (oldFocus != null && !isInside(oldFocus, binding.navBarContainer) && isInside(newFocus, binding.navBarContainer)) {
+            // coming from the content: go to the current section, not the closest rail item
+            val selected = binding.navBar.findViewById<View>(binding.navBar.selectedItemId)
+            if (selected != null && selected !== newFocus) {
+                binding.root.post { selected.requestFocus() }
+            }
+        } else if (oldFocus == null && isInside(newFocus, binding.navBarContainer) && tvLastKeyCode != KeyEvent.KEYCODE_DPAD_LEFT) {
+            binding.root.post { restoreTvContentFocus(10) }
+        }
+    }
+
+    /**
+     * The focused view went away: a list reloaded, or a screen was opened or closed (card actions, BACK).
+     * Same view or grid if it's still there, otherwise the list of the screen now shown, once it has cards.
+     */
+    private fun restoreTvContentFocus(retries: Int) {
+        if (!binding.navBarContainer.hasFocus()) return
+        val last = tvLastContentFocus?.get() ?: return
+        if (last.isAttachedToWindow && last.isShown && last.requestFocus()) return
+        val lastGrid = generateSequence(last.parent) { it.parent }.filterIsInstance<TvGridView>().firstOrNull()
+        if (lastGrid != null && lastGrid.isAttachedToWindow && lastGrid.isShown && lastGrid.requestFocus()) return
+        // grids in tab pages that aren't shown refuse the focus (TvScreen), so the visible one takes it
+        if (findGrids(binding.navHostFragment).any { it.isShown && it.childCount > 0 && it.requestFocus() }) return
+        if (retries > 0) {
+            binding.root.postDelayed({ restoreTvContentFocus(retries - 1) }, 150)
+        } else {
+            binding.navHostFragment.requestFocus()
+        }
+    }
+
+    private fun findGrids(view: View): Sequence<TvGridView> = when (view) {
+        is TvGridView -> sequenceOf(view)
+        is ViewGroup -> (0 until view.childCount).asSequence().flatMap { findGrids(view.getChildAt(it)) }
+        else -> emptySequence()
     }
 
     /**
@@ -1139,10 +1200,82 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (isTv && (playerFragment as? PlayerFragment)?.dispatchTvKeyEvent(event) == true) {
-            return true
+        if (isTv) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                tvLastKeyCode = event.keyCode
+            }
+            if ((playerFragment as? PlayerFragment)?.dispatchTvKeyEvent(event) == true) {
+                return true
+            }
+            if (isVerticalMoveBetweenNavBarAndContent(event)) {
+                return true
+            }
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && event.action == KeyEvent.ACTION_DOWN &&
+                currentFocus?.let { isInside(it, binding.navBarContainer) } == true
+            ) {
+                // from the rail back to where you were in the screen, not to whatever is closest to the rail item
+                val last = tvLastContentFocus?.get()
+                if (last != null && last.isAttachedToWindow && last.isShown && last.requestFocus()) return true
+                if (findGrids(binding.navHostFragment).any { it.isShown && it.childCount > 0 && it.requestFocus() }) return true
+            }
+            if (redirectTvFocusEntry(event)) {
+                return true
+            }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * Entering the navigation rail goes to the current section and entering a tab bar to the selected tab, not to
+     * whichever item is geometrically closest. Decided before the key moves the focus, so it never stops on the
+     * wrong item first.
+     */
+    private fun redirectTvFocusEntry(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN) return false
+        val direction = when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT
+            KeyEvent.KEYCODE_DPAD_RIGHT -> View.FOCUS_RIGHT
+            KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP
+            KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
+            else -> return false
+        }
+        val focused = currentFocus ?: return false
+        val next = focused.focusSearch(direction) ?: return false
+        val target = if (isInside(next, binding.navBarContainer) && !isInside(focused, binding.navBarContainer)) {
+            binding.navBar.findViewById<View>(binding.navBar.selectedItemId)?.takeIf { it !== next }
+        } else {
+            TvScreen.tabEntry(focused, next)
+        }
+        return target?.requestFocus() == true
+    }
+
+    /**
+     * UP/DOWN must not move the focus between the navigation rail and the screen content, LEFT/RIGHT do that.
+     * Lists (TvGridView) never let the focus out DOWN or RIGHT themselves; this covers the rail and the headers.
+     */
+    private fun isVerticalMoveBetweenNavBarAndContent(event: KeyEvent): Boolean {
+        val direction = when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP
+            KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
+            else -> return false
+        }
+        if (event.action != KeyEvent.ACTION_DOWN) return false
+        val focused = currentFocus ?: return false
+        val inNavBar = isInside(focused, binding.navBarContainer)
+        if (!inNavBar && !isInside(focused, binding.navHostFragment)) return false
+        val next = focused.focusSearch(direction) ?: return false
+        return if (inNavBar) {
+            isInside(next, binding.navHostFragment)
+        } else if (isInside(next, binding.navBarContainer)) {
+            // DOWN from the header: the list's way in is the card focused last, which may be in another column
+            // than the tab, and the plain geometric search then prefers a rail item. Go into the list instead.
+            if (direction == View.FOCUS_DOWN) {
+                findGrids(binding.navHostFragment).any { it.isShown && it.childCount > 0 && it.requestFocus() }
+            }
+            true
+        } else {
+            false
+        }
     }
 
     /**
@@ -1152,6 +1285,7 @@ class MainActivity : AppCompatActivity() {
      */
     fun setTvPlayerFocus(playerOpen: Boolean) {
         if (!isTv) return
+        binding.playerContainer.isFocusable = playerOpen
         if (playerOpen) {
             if (focusBeforePlayer == null) {
                 currentFocus?.takeIf { !isInsidePlayer(it) }?.let { focusBeforePlayer = WeakReference(it) }
@@ -1194,10 +1328,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun isInsidePlayer(view: View): Boolean {
+    private fun isInsidePlayer(view: View): Boolean = isInside(view, binding.playerContainer)
+
+    private fun isInside(view: View, container: View): Boolean {
         var current: View? = view
         while (current != null) {
-            if (current === binding.playerContainer) return true
+            if (current === container) return true
             current = current.parent as? View
         }
         return false
@@ -1513,6 +1649,18 @@ class MainActivity : AppCompatActivity() {
                     putString(C.LANDSCAPE_COLUMN_COUNT, "3")
                 }
                 putInt(C.SETTINGS_VERSION, 18)
+            }
+        }
+        if (version < 19) {
+            prefs.edit {
+                // A TV is far away and wide: 30% chat takes too much of the picture. Only if it's still the default.
+                if (isTv && prefs.getInt("chatWidth", 30) == 30) {
+                    val width = resources.displayMetrics.widthPixels
+                    val height = resources.displayMetrics.heightPixels
+                    putInt("chatWidth", 22)
+                    putInt(C.LANDSCAPE_CHAT_WIDTH, ((if (height > width) height else width) * (22 / 100f)).toInt())
+                }
+                putInt(C.SETTINGS_VERSION, 19)
             }
         }
     }

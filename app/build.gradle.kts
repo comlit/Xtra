@@ -116,6 +116,7 @@ dependencies {
     implementation(libs.glide.webpdecoder)
 
     implementation(libs.coroutines)
+    implementation(libs.zxing.core)
 }
 
 apollo {

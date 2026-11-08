@@ -322,6 +322,14 @@ class ExoPlayerFragment : PlayerFragment() {
                                 playbackService?.restoreQuality = false
                                 changeQuality(playbackService?.previousQuality)
                             }
+                            if (playbackService?.pausedByTvHome == true) {
+                                // back from the TV home screen: continue where it was left, live streams at live
+                                playbackService?.pausedByTvHome = false
+                                if (playbackService?.type == BasePlaybackService.STREAM) {
+                                    playbackService?.seekToDefaultPosition()
+                                }
+                                playbackService?.player?.play()
+                            }
                         }
                     }
                     playbackService?.player?.let { player ->

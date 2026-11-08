@@ -5,6 +5,8 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.View
@@ -41,6 +43,9 @@ import com.github.andreyasadchy.xtra.util.isTv
 import com.github.andreyasadchy.xtra.util.prefs
 import com.github.andreyasadchy.xtra.util.tokenPrefs
 import com.google.android.material.slider.Slider
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import kotlinx.coroutines.launch
@@ -567,12 +572,21 @@ class LoginActivity : AppCompatActivity() {
                     deviceCode = response.deviceCode
                     userCode = response.userCode
                     codeText.text = if (isTv) getString(R.string.tv_login_code, userCode) else userCode
+                    if (isTv && userCode != null) {
+                        val url = response.verificationUri ?: "https://www.twitch.tv/activate?device-code=$userCode"
+                        val size = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 200f, resources.displayMetrics).toInt()
+                        createQrCode(url, size)?.let {
+                            qrCode.setImageBitmap(it)
+                            qrCode.visibility = View.VISIBLE
+                        }
+                    }
                 } catch (e: Exception) {
 
                 }
             }
             codeText.visibility = View.VISIBLE
-            copyCode.visibility = View.VISIBLE
+            // copying to the TV's clipboard doesn't help, the code is entered on another device
+            copyCode.visibility = if (isTv) View.GONE else View.VISIBLE
             copyCode.setOnClickListener {
                 if (userCode != null) {
                     val clipboardManager = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
@@ -612,6 +626,7 @@ class LoginActivity : AppCompatActivity() {
                                         done()
                                     } else {
                                         error()
+                                        qrCode.visibility = View.GONE
                                         codeText.visibility = View.GONE
                                         codeText.text = getString(R.string.loading)
                                         copyCode.visibility = View.GONE
@@ -633,6 +648,18 @@ class LoginActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun createQrCode(text: String, size: Int): Bitmap? {
+        return try {
+            val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, mapOf(EncodeHintType.MARGIN to 2))
+            val width = matrix.width
+            val height = matrix.height
+            val pixels = IntArray(width * height) { i -> if (matrix[i % width, i / width]) Color.BLACK else Color.WHITE }
+            Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+        } catch (e: Exception) {
+            null
         }
     }
 

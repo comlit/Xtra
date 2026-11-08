@@ -98,6 +98,7 @@ class VideosAdapter(
                             startFromBeginning
                         )
                     }
+                    root.setTag(R.id.tv_long_press_label, R.string.download)
                     root.setOnLongClickListener {
                         showDownloadDialog(item)
                         true

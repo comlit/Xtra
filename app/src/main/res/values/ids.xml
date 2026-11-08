@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="tv_focus_original_stroke" type="id" />
+    <item name="tv_focus_foreground" type="id" />
+    <item name="tv_long_press_label" type="id" />
 </resources>

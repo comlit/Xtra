@@ -48,6 +48,7 @@ abstract class BasePlaybackService : LifecycleService() {
     var quality: VideoQuality? = null
     var previousQuality: VideoQuality? = null
     var restoreQuality = false
+    var pausedByTvHome = false
     var playlistUrl: String? = null
     var restorePlaylist = false
     var useCustomProxy = false

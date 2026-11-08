@@ -12,6 +12,7 @@ import com.github.andreyasadchy.xtra.R
 import com.github.andreyasadchy.xtra.databinding.PlayerSettingsBinding
 import com.github.andreyasadchy.xtra.util.C
 import com.github.andreyasadchy.xtra.util.TwitchApiHelper
+import com.github.andreyasadchy.xtra.util.isTv
 import com.github.andreyasadchy.xtra.util.prefs
 import com.github.andreyasadchy.xtra.util.tokenPrefs
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -163,7 +164,7 @@ class PlayerSettingsDialog : BottomSheetDialogFragment() {
                 }
             }
             if ((parentFragment as? PlayerFragment)?.getIsPortrait() == false) {
-                if (requireContext().prefs().getBoolean(C.PLAYER_MENU_ASPECT, false)) {
+                if (requireContext().prefs().getBoolean(C.PLAYER_MENU_ASPECT, false) && !requireContext().isTv) {
                     menuRatio.visibility = View.VISIBLE
                     menuRatio.setOnClickListener {
                         (parentFragment as? PlayerFragment)?.setResizeMode()

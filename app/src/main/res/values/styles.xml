@@ -1609,4 +1609,17 @@
         <item name="android:tint">?attr/colorControlNormal</item>
     </style>
 
+    <!-- Buttons of the TV player controls (layout-television/player_layout.xml) -->
+    <style name="TvPlayerButton">
+        <item name="android:layout_width">48dp</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_marginStart">2dp</item>
+        <item name="android:layout_marginEnd">2dp</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:visibility">gone</item>
+        <item name="tint">@android:color/white</item>
+    </style>
+
 </resources>

@@ -57,6 +57,7 @@ object C {
     const val SETTINGS_VERSION = "settings_version"
     const val LANDSCAPE_CHAT_WIDTH = "landscape_chat_width"
     const val KEY_CHAT_OPENED = "key_chat_opened"
+    const val KEY_CHAT_OVERLAY = "key_chat_overlay"
     const val KEY_CHAT_BAR_VISIBLE = "key_chat_bar_visible"
     const val SLEEP_TIMER_MINUTES = "sleep_timer_minutes"
     const val SLEEP_TIMER_TIME = "sleep_timer_time"

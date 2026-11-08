@@ -12,6 +12,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
@@ -19,6 +20,7 @@ import android.os.SystemClock
 import android.text.format.DateFormat
 import android.text.format.DateUtils
 import android.util.TypedValue
+import android.view.FocusFinder
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
@@ -38,6 +40,7 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.trackPipAnimationHintView
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
@@ -49,6 +52,7 @@ import androidx.core.view.doOnPreDraw
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
+import androidx.core.view.updatePaddingRelative
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -129,6 +133,12 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
     private var backgroundVisible = false
     private var isTv = false
     private var closedOnTv = false
+    private var chatOverlay = false
+    private var chatBackground: Drawable? = null
+
+    // reaching a button with a remote takes longer than tapping it, so keep the controls up longer on a TV
+    private val controllerHideDelay: Long
+        get() = if (isTv) 5000L else 3000L
 
     private val backPressedCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
@@ -247,8 +257,11 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                 disableBackground()
             }
             isChatOpen = requireContext().prefs().getBoolean(C.KEY_CHAT_OPENED, true) && !requireContext().prefs().getBoolean(C.CHAT_DISABLE, false)
+            chatOverlay = isTv && requireContext().prefs().getBoolean(C.KEY_CHAT_OVERLAY, false)
+            chatBackground = chatLayout.background
             chatWidthLandscape = requireContext().prefs().getInt(C.LANDSCAPE_CHAT_WIDTH, 0)
-            resizeMode = requireContext().prefs().getInt(C.ASPECT_RATIO_LANDSCAPE, AspectRatioFrameLayout.RESIZE_MODE_FIT)
+            // TV: always fit the video, the aspect ratio button is hidden there so a zoom mode couldn't be undone
+            resizeMode = if (isTv) AspectRatioFrameLayout.RESIZE_MODE_FIT else requireContext().prefs().getInt(C.ASPECT_RATIO_LANDSCAPE, AspectRatioFrameLayout.RESIZE_MODE_FIT)
             aspectRatioFrameLayout.setAspectRatio(16f / 9f)
             initLayout()
             changePlayerMode()
@@ -625,7 +638,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                                 seek(position)
                             } else {
                                 if (controllerAutoHide && controllerHideOnTouch) {
-                                    binding.playerControls.root.postDelayed(controllerHideAction, 3000)
+                                    binding.playerControls.root.postDelayed(controllerHideAction, controllerHideDelay)
                                 }
                             }
                         }
@@ -1199,17 +1212,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                 }
                 if (isMaximized) {
                     hideStatusBar()
-                    val chatWidth = if (isChatOpen) chatWidthLandscape else 0
-                    playerLayout.updateLayoutParams<FrameLayout.LayoutParams> {
-                        width = ViewGroup.LayoutParams.MATCH_PARENT
-                        height = ViewGroup.LayoutParams.MATCH_PARENT
-                        marginEnd = chatWidth
-                    }
-                    chatLayout.updateLayoutParams<FrameLayout.LayoutParams> {
-                        width = chatWidthLandscape
-                        height = ViewGroup.LayoutParams.MATCH_PARENT
-                        gravity = Gravity.END
-                    }
+                    updateLandscapeChatLayout()
                     if (isChatOpen) {
                         chatLayout.visibility = View.VISIBLE
                         if (requireView().findViewById<Button>(R.id.btnDown)?.isVisible == false) {
@@ -1265,7 +1268,8 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                             requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                         }
                     }
-                    if (requireContext().prefs().getBoolean(C.PLAYER_ASPECT, true)) {
+                    // TV: zoom/stretch modes don't fit with the chat modes (next to / on top of the video)
+                    if (requireContext().prefs().getBoolean(C.PLAYER_ASPECT, true) && !isTv) {
                         aspectRatio.visibility = View.VISIBLE
                         aspectRatio.setOnClickListener {
                             showController(force = true)
@@ -1274,7 +1278,9 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                     }
                     if (requireContext().prefs().getBoolean(C.PLAYER_CHAT_TOGGLE, true) && !requireContext().prefs().getBoolean(C.CHAT_DISABLE, false)) {
                         toggleChat.visibility = View.VISIBLE
-                        if (isChatOpen) {
+                        if (isTv) {
+                            updateTvChatToggle()
+                        } else if (isChatOpen) {
                             toggleChat.setImageResource(R.drawable.baseline_speaker_notes_off_black_24)
                             toggleChat.setOnClickListener {
                                 showController(force = true)
@@ -1440,7 +1446,9 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
     fun hideChat() {
         isChatOpen = false
         hideChatLayout()
-        if (requireContext().prefs().getBoolean(C.PLAYER_CHAT_TOGGLE, true)) {
+        if (isTv) {
+            updateTvChatToggle()
+        } else if (requireContext().prefs().getBoolean(C.PLAYER_CHAT_TOGGLE, true)) {
             binding.playerControls.toggleChat.apply {
                 visibility = View.VISIBLE
                 setImageResource(R.drawable.baseline_speaker_notes_black_24)
@@ -1456,7 +1464,9 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
     fun showChat() {
         isChatOpen = true
         showChatLayout()
-        if (requireContext().prefs().getBoolean(C.PLAYER_CHAT_TOGGLE, true)) {
+        if (isTv) {
+            updateTvChatToggle()
+        } else if (requireContext().prefs().getBoolean(C.PLAYER_CHAT_TOGGLE, true)) {
             binding.playerControls.toggleChat.apply {
                 visibility = View.VISIBLE
                 setImageResource(R.drawable.baseline_speaker_notes_off_black_24)
@@ -1488,19 +1498,84 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
     }
 
     private fun showChatLayout() {
+        updateLandscapeChatLayout()
+        binding.chatLayout.visibility = View.VISIBLE
+    }
+
+    /**
+     * Landscape chat is a panel next to the video. On a TV it can also be a see-through panel on top of the
+     * right side of the video; the player controls (all in one panel at the bottom there) then stop short of it.
+     */
+    private fun updateLandscapeChatLayout() {
         with(binding) {
+            val overlay = chatOverlay && isChatOpen
             playerLayout.updateLayoutParams<FrameLayout.LayoutParams> {
                 width = ViewGroup.LayoutParams.MATCH_PARENT
                 height = ViewGroup.LayoutParams.MATCH_PARENT
-                marginEnd = chatWidthLandscape
+                marginEnd = if (isChatOpen && !overlay) chatWidthLandscape else 0
             }
+            val margin = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16f, resources.displayMetrics).toInt()
             chatLayout.updateLayoutParams<FrameLayout.LayoutParams> {
                 width = chatWidthLandscape
                 height = ViewGroup.LayoutParams.MATCH_PARENT
                 gravity = Gravity.END
+                topMargin = if (overlay) margin else 0
+                bottomMargin = if (overlay) margin else 0
             }
-            chatLayout.visibility = View.VISIBLE
+            playerControls.tvControlsPanel?.let { panel ->
+                panel.updatePaddingRelative(end = if (overlay) chatWidthLandscape + margin else margin + margin / 2)
+            }
+            if (overlay) {
+                chatLayout.setBackgroundColor(ContextCompat.getColor(requireContext(), R.color.tv_chat_overlay_background))
+            } else {
+                chatLayout.background = chatBackground
+            }
         }
+    }
+
+    private fun updateTvChatToggle() {
+        binding.playerControls.toggleChat.apply {
+            visibility = View.VISIBLE
+            setImageResource(
+                when {
+                    !isChatOpen -> R.drawable.baseline_speaker_notes_off_black_24
+                    chatOverlay -> R.drawable.ic_chat_overlay
+                    else -> R.drawable.baseline_speaker_notes_black_24
+                }
+            )
+            setOnClickListener {
+                showController(force = true)
+                cycleTvChatMode()
+            }
+        }
+    }
+
+    /**
+     * The chat button on a TV cycles through: next to the video -> on top of the video -> off.
+     */
+    private fun cycleTvChatMode() {
+        val message = when {
+            !isChatOpen -> {
+                setTvChatOverlay(false)
+                showChat()
+                R.string.chat_mode_side
+            }
+            !chatOverlay -> {
+                setTvChatOverlay(true)
+                showChat()
+                R.string.chat_mode_overlay
+            }
+            else -> {
+                hideChat()
+                R.string.chat_mode_off
+            }
+        }
+        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun setTvChatOverlay(enabled: Boolean) {
+        chatOverlay = enabled
+        requireContext().prefs().edit { putBoolean(C.KEY_CHAT_OVERLAY, enabled) }
     }
 
     fun setQualityText() {
@@ -1705,7 +1780,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
         with(binding) {
             if (canEnterPictureInPicture()) {
                 if (!controllerHideOnTouch && !controllerIsAnimating && controllerAutoHide && !binding.playerControls.progressBar.isPressed) {
-                    playerControls.root.postDelayed(controllerHideAction, 3000)
+                    playerControls.root.postDelayed(controllerHideAction, controllerHideDelay)
                 }
                 controllerHideOnTouch = true
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -1749,7 +1824,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                                     controllerIsAnimating = false
                                     setListener(null)
                                     if (view != null && controllerAutoHide && controllerHideOnTouch && !binding.playerControls.progressBar.isPressed) {
-                                        binding.playerControls.root.postDelayed(controllerHideAction, 3000)
+                                        binding.playerControls.root.postDelayed(controllerHideAction, controllerHideDelay)
                                     }
                                 }
                             }
@@ -1760,7 +1835,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
             } else {
                 binding.playerControls.root.removeCallbacks(controllerHideAction)
                 if (controllerAutoHide && controllerHideOnTouch && !binding.playerControls.progressBar.isPressed) {
-                    binding.playerControls.root.postDelayed(controllerHideAction, 3000)
+                    binding.playerControls.root.postDelayed(controllerHideAction, controllerHideDelay)
                 }
             }
         } else {
@@ -1770,7 +1845,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                 binding.playerControls.root.alpha = 1f
                 binding.playerControls.root.visibility = View.VISIBLE
                 if (controllerAutoHide && controllerHideOnTouch && !binding.playerControls.progressBar.isPressed) {
-                    binding.playerControls.root.postDelayed(controllerHideAction, 3000)
+                    binding.playerControls.root.postDelayed(controllerHideAction, controllerHideDelay)
                 }
             }
         }
@@ -2208,11 +2283,22 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
             updateProgress()
         }
         if (!controls.hasFocus()) {
+            // play/pause, or the first button of the row (live streams have no play/pause)
             val playPause = binding.playerControls.playPause
-            if (!(playPause.isVisible && playPause.requestFocus())) {
+            val firstButton = binding.playerControls.tvButtonsRow?.let { firstFocusable(it) }
+            if (!(playPause.isVisible && playPause.requestFocus()) && firstButton?.requestFocus() != true) {
                 controls.requestFocus()
             }
         }
+    }
+
+    private fun firstFocusable(view: View): View? {
+        if (!view.isShown) return null
+        if (view !is ViewGroup) return view.takeIf { it.isFocusable }
+        for (i in 0 until view.childCount) {
+            firstFocusable(view.getChildAt(i))?.let { return it }
+        }
+        return null
     }
 
     /**
@@ -2256,7 +2342,16 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
             }
         }
         if (binding.chatLayout.hasFocus()) {
-            // let the remote scroll through chat messages, BACK returns to the player
+            // Let the remote scroll through chat messages, BACK returns to the player.
+            // LEFT also goes back to the controls, even when they are hidden and a normal focus search
+            // would find nothing, which left the focus stuck in the chat.
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && isDown) {
+                val focused = binding.chatLayout.findFocus()
+                if (focused == null || FocusFinder.getInstance().findNextFocus(binding.chatLayout, focused, View.FOCUS_LEFT) == null) {
+                    showTvControls()
+                    return true
+                }
+            }
             return false
         }
         val isNavigationKey = when (keyCode) {
@@ -2275,6 +2370,14 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
                 showController(force = true)
                 if (!controls.hasFocus()) {
                     showTvControls()
+                    return true
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    // Only search inside the controls. Otherwise the chat next to the video is closer than the
+                    // other row of buttons and UP/DOWN jumps into the chat, so the bottom row can't be reached.
+                    // The chat stays reachable with LEFT/RIGHT.
+                    val direction = if (keyCode == KeyEvent.KEYCODE_DPAD_UP) View.FOCUS_UP else View.FOCUS_DOWN
+                    controls.findFocus()?.let { FocusFinder.getInstance().findNextFocus(controls, it, direction) }?.requestFocus()
                     return true
                 }
             }

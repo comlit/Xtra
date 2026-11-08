@@ -46,11 +46,14 @@
         app:layout_constraintTop_toTopOf="parent"
         tools:layout="@layout/fragment_media_pager" />
 
+    <!--
+        Only focusable while a player is open (MainActivity.setTvPlayerFocus). An empty full screen
+        focusable view is a trap: no D-pad direction leads anywhere from it.
+    -->
     <FrameLayout
         android:id="@+id/playerContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:clipChildren="false"
-        android:focusable="true" />
+        android:clipChildren="false" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -51,6 +51,7 @@ import com.github.andreyasadchy.xtra.ui.view.AutoCompleteAdapter
 import com.github.andreyasadchy.xtra.util.C
 import com.github.andreyasadchy.xtra.util.TwitchApiHelper
 import com.github.andreyasadchy.xtra.util.getAlertDialogBuilder
+import com.github.andreyasadchy.xtra.util.isTv
 import com.github.andreyasadchy.xtra.util.prefs
 import com.github.andreyasadchy.xtra.util.reduceDragSensitivity
 import com.github.andreyasadchy.xtra.util.tokenPrefs
@@ -113,6 +114,12 @@ class ChatFragment : BaseNetworkFragment(), MessageClickedDialog.OnButtonClickLi
             }
         }
         with(binding) {
+            if (requireContext().isTv) {
+                // Live chat keeps scrolling, so a message focused with the remote slides out of view and the
+                // focus seems to be gone. On a TV the chat is for reading only and the D-pad stays on the player.
+                recyclerView.isFocusable = false
+                recyclerView.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            }
             if (!requireContext().prefs().getBoolean(C.CHAT_DISABLE, false)) {
                 val args = requireArguments()
                 val channelId = args.getString(KEY_CHANNEL_ID)
