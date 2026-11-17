@@ -2249,7 +2249,7 @@ abstract class PlayerFragment : BaseNetworkFragment(), RadioButtonDialogFragment
         }
     }
 
-    private fun closeOnTv() {
+    fun closeOnTv() {
         if (!closedOnTv) {
             closedOnTv = true
             isMaximized = false

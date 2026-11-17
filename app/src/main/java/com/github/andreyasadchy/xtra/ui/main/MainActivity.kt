@@ -85,6 +85,7 @@ import com.github.andreyasadchy.xtra.ui.game.GameMediaFragmentDirections
 import com.github.andreyasadchy.xtra.ui.game.GamePagerFragmentDirections
 import com.github.andreyasadchy.xtra.ui.games.GamesFragmentDirections
 import com.github.andreyasadchy.xtra.ui.main.MainViewModel.Companion.MainViewModelFactory
+import com.github.andreyasadchy.xtra.ui.following.FollowPagerFragment
 import com.github.andreyasadchy.xtra.ui.player.BasePlaybackService
 import com.github.andreyasadchy.xtra.ui.player.ExoPlayerFragment
 import com.github.andreyasadchy.xtra.ui.player.MediaPlayerFragment
@@ -475,6 +476,14 @@ class MainActivity : AppCompatActivity() {
                 viewModel.playbackStates.collectLatest { states ->
                     val savedState = states.firstOrNull()
                     if (savedState != null) {
+                        if (isTv && savedState.type == BasePlaybackService.STREAM &&
+                            isTvChannelLive(savedState.channelId, savedState.channelLogin) == false
+                        ) {
+                            // the stream that was playing last time has ended: start on the followed streams instead
+                            viewModel.deletePlaybackStates()
+                            showTvFollowed()
+                            return@collectLatest
+                        }
                         (playerFragment as? PlayerFragment)?.close()
                         val fragment = when (prefs.getString(C.PLAYER, C.EXOPLAYER)) {
                             C.MEDIA_PLAYER -> MediaPlayerFragment()
@@ -650,6 +659,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         restorePlayerFragment()
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        if (isTv) {
+            // Back from the TV home screen (or another app): the activity kept its old lists, reload them so
+            // the followed streams are current. Posted, so the screens are laid out again first.
+            binding.root.post { refreshPagedLists(binding.navHostFragment) }
+        }
     }
 
     override fun onDestroy() {
@@ -1119,6 +1137,46 @@ class MainActivity : AppCompatActivity() {
 
 //TV methods
 
+    suspend fun isTvChannelLive(channelId: String?, channelLogin: String?): Boolean? {
+        return viewModel.isChannelLive(
+            channelId,
+            channelLogin,
+            prefs.getString(C.NETWORK_LIBRARY, C.OKHTTP),
+            TwitchApiHelper.getGQLHeaders(this),
+            TwitchApiHelper.getHelixHeaders(this),
+        )
+    }
+
+    /**
+     * The stream that was playing before the app went to the background has ended in the meantime:
+     * close the player and show the followed live streams, reloaded.
+     */
+    fun closeOfflineTvStream() {
+        (playerFragment as? PlayerFragment)?.closeOnTv()
+        Toast.makeText(this, R.string.stream_ended, Toast.LENGTH_LONG).show()
+        showTvFollowed()
+    }
+
+    private fun showTvFollowed() {
+        val followId = if (prefs.getBoolean(C.UI_FOLLOW_PAGER, true)) R.id.followPagerFragment else R.id.followMediaFragment
+        if (binding.navBar.menu.findItem(followId) == null) return
+        val wasSelected = binding.navBar.selectedItemId == followId
+        // selecting the current section again goes back to its start and reloads its lists (reselect listener)
+        binding.navBar.selectedItemId = followId
+        if (binding.navBarContainer.hasFocus()) {
+            focusNavBar()
+        }
+        // the screen is created or restored with the navigation, so switch tab and reload once it's there
+        binding.root.postDelayed({
+            supportFragmentManager.findFragmentById(R.id.navHostFragment)?.childFragmentManager?.fragments?.firstOrNull()?.let { fragment ->
+                (fragment as? FollowPagerFragment)?.showLiveTab()
+                if (!wasSelected) {
+                    fragment.view?.let { refreshPagedLists(it) }
+                }
+            }
+        }, 300)
+    }
+
     private fun setupTv() {
         TvFocusHighlight.install(this)
         onBackPressedDispatcher.addCallback(this, tvBackToNavBarCallback)
@@ -1165,7 +1223,12 @@ class MainActivity : AppCompatActivity() {
      */
     private fun restoreTvContentFocus(retries: Int) {
         if (!binding.navBarContainer.hasFocus()) return
-        val last = tvLastContentFocus?.get() ?: return
+        val last = tvLastContentFocus?.get()
+        if (last == null) {
+            // app start: Android puts the focus on the first rail item, use the current section instead
+            focusNavBar()
+            return
+        }
         if (last.isAttachedToWindow && last.isShown && last.requestFocus()) return
         val lastGrid = generateSequence(last.parent) { it.parent }.filterIsInstance<TvGridView>().firstOrNull()
         if (lastGrid != null && lastGrid.isAttachedToWindow && lastGrid.isShown && lastGrid.requestFocus()) return

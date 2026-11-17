@@ -126,6 +126,33 @@ class MainViewModel(
         }
     }
 
+    fun deletePlaybackStates() {
+        viewModelScope.launch {
+            playerRepository.deletePlaybackStates()
+        }
+    }
+
+    /**
+     * Whether the channel is streaming right now. null if it couldn't be found out (no network, API errors);
+     * callers then go on as if it was live and the player shows its own error.
+     */
+    suspend fun isChannelLive(channelId: String?, channelLogin: String?, networkLibrary: String?, gqlHeaders: Map<String, String>, helixHeaders: Map<String, String>): Boolean? {
+        if (channelId.isNullOrBlank() && channelLogin.isNullOrBlank()) return null
+        val ids = channelId?.takeIf { it.isNotBlank() }?.let { listOf(it) }
+        val logins = if (ids == null) channelLogin?.let { listOf(it) } else null
+        return try {
+            val user = graphQLRepository.loadQueryUsersStream(networkLibrary, gqlHeaders, ids = ids, logins = logins).data!!.users!!.firstOrNull()!!
+            user.stream != null
+        } catch (e: Exception) {
+            if (helixHeaders[C.HEADER_TOKEN].isNullOrBlank()) return null
+            try {
+                helixRepository.getStreams(networkLibrary, helixHeaders, ids = ids, logins = logins).data.isNotEmpty()
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
     suspend fun getWaitingDownloads(): List<OfflineVideo> {
         return offlineVideosRepository.getWaitingDownloads()
     }

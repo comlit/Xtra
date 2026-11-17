@@ -36,6 +36,8 @@ import com.github.andreyasadchy.xtra.model.VideoQuality
 import com.github.andreyasadchy.xtra.ui.game.GameMediaFragmentDirections
 import com.github.andreyasadchy.xtra.ui.game.GamePagerFragmentDirections
 import com.github.andreyasadchy.xtra.ui.main.MainActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.github.andreyasadchy.xtra.util.C
 import com.github.andreyasadchy.xtra.util.getAlertDialogBuilder
 import com.github.andreyasadchy.xtra.util.prefs
@@ -323,12 +325,24 @@ class ExoPlayerFragment : PlayerFragment() {
                                 changeQuality(playbackService?.previousQuality)
                             }
                             if (playbackService?.pausedByTvHome == true) {
-                                // back from the TV home screen: continue where it was left, live streams at live
+                                // back from the TV home screen: continue where it was left, live streams at live,
+                                // unless the stream has ended in the meantime
                                 playbackService?.pausedByTvHome = false
-                                if (playbackService?.type == BasePlaybackService.STREAM) {
-                                    playbackService?.seekToDefaultPosition()
+                                val service = playbackService
+                                if (service?.type == BasePlaybackService.STREAM) {
+                                    val activity = activity as? MainActivity
+                                    viewLifecycleOwner.lifecycleScope.launch {
+                                        val live = activity?.isTvChannelLive(service.channelId, service.channelLogin)
+                                        if (live == false) {
+                                            activity?.closeOfflineTvStream()
+                                        } else if (playbackService === service) {
+                                            service.seekToDefaultPosition()
+                                            service.player?.play()
+                                        }
+                                    }
+                                } else {
+                                    service?.player?.play()
                                 }
-                                playbackService?.player?.play()
                             }
                         }
                     }

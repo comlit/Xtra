@@ -38,6 +38,7 @@ class FollowPagerFragment : Fragment(), Scrollable, FragmentHost {
     private var _binding: FragmentMediaPagerBinding? = null
     private val binding get() = _binding!!
     private var firstLaunch = true
+    private var tabKeys: List<String> = emptyList()
 
     override val currentFragment: Fragment?
         get() = childFragmentManager.findFragmentByTag("f${binding.viewPager.currentItem}")
@@ -113,6 +114,7 @@ class FollowPagerFragment : Fragment(), Scrollable, FragmentHost {
                     null
                 }
             }
+            tabKeys = tabs
             if (tabs.size <= 1) {
                 tabLayout.visibility = View.GONE
             } else {
@@ -185,6 +187,14 @@ class FollowPagerFragment : Fragment(), Scrollable, FragmentHost {
     override fun scrollToTop() {
         binding.appBar.setExpanded(true, true)
         (currentFragment as? Scrollable)?.scrollToTop()
+    }
+
+    /** Shows the followed live streams tab (on a TV, after the stream that was playing went offline). */
+    fun showLiveTab() {
+        val index = tabKeys.indexOf("1")
+        if (_binding != null && index != -1) {
+            binding.viewPager.setCurrentItem(index, false)
+        }
     }
 
     override fun onDestroyView() {
